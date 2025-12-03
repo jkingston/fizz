@@ -1,0 +1,80 @@
+# Fizz node configuration
+# Copy to ~/.config/fizz/config.yaml or /etc/fizz/config.yaml
+
+# Node identity and metadata
+node:
+  # Unique name for this node (default: hostname)
+  # name: node-1
+
+  # Labels for placement constraints
+  # Example: fizz up with x-fizz.placement.constraints: [node.labels.zone == us-east]
+  labels: {}
+    # zone: us-east-1a
+    # tier: frontend
+
+# Cluster settings
+cluster:
+  # Cluster name (for federation identification)
+  name: default
+
+  # Path to cluster secret key (for node authentication)
+  # secret_key: /etc/fizz/cluster.key
+
+# SWIM membership protocol tuning
+membership:
+  # How often to probe a random peer
+  probe_interval: 1s
+
+  # Timeout waiting for probe response
+  probe_timeout: 500ms
+
+  # Number of peers to ask for indirect probe
+  indirect_checks: 3
+
+  # Multiplier for suspicion timeout (probe_interval * suspicion_mult)
+  suspicion_mult: 4
+
+# Container runtime
+runtime:
+  # Runtime to use: docker, podman
+  driver: docker
+
+  # Socket path (default: auto-detect)
+  # socket: /var/run/docker.sock
+
+# Overlay networking
+network:
+  # Network driver: wireguard, vxlan, host
+  driver: wireguard
+
+  # Overlay network CIDR (containers get IPs from this range)
+  subnet: 10.100.0.0/16
+
+  # DNS server port for service discovery
+  dns_port: 5353
+
+# REST API server
+api:
+  # Bind address
+  bind: "0.0.0.0:7947"
+
+  # TLS configuration (optional)
+  # tls:
+  #   cert: /etc/fizz/certs/api.crt
+  #   key: /etc/fizz/certs/api.key
+
+# Secrets management
+secrets:
+  # Encryption backend: age
+  backend: age
+
+  # Path to secrets encryption key
+  # key_file: /etc/fizz/secrets.key
+
+# Logging
+logging:
+  # Log level: debug, info, warn, error
+  level: info
+
+  # Output format: json, text
+  format: json

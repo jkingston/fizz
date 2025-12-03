@@ -1,0 +1,13 @@
+# Simple single-service compose file for testing
+# Used to validate basic fizz functionality
+
+services:
+  web:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
