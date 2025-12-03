@@ -68,11 +68,43 @@ fizz down
 
 ## Coding Conventions
 
-### Zig Style
-- Follow Zig standard library conventions
-- Use `snake_case` for functions and variables
-- Use `PascalCase` for types
-- Prefer explicit error handling over optionals where errors are meaningful
+### Zig Style Guide
+
+**Reference:** [Zig: Zero to Hero](https://github.com/jkingston/zig_guide) — Use this as the authoritative coding and style reference for all Zig code in this project.
+
+#### Naming Conventions
+| Element | Convention | Example |
+|---------|------------|---------|
+| Types (struct, enum, union) | PascalCase | `const Point = struct { ... }` |
+| Functions returning values | camelCase | `fn calculateSum(a: i32, b: i32) i32` |
+| Functions returning types | PascalCase | `fn ArrayList(comptime T: type) type` |
+| Variables, parameters, constants | snake_case | `const max_connections = 100` |
+| File names | snake_case | `compose_parser.zig` |
+| Units in identifiers | Suffix with unit | `latency_ms_max`, `buffer_size_bytes` |
+| Acronyms | Fully capitalized | `VSRState`, `CRDTMerge` |
+
+#### Error Handling
+- Use error unions (`!T`) for operations that can fail
+- Use optionals (`?T`) when absence is valid/expected (not an error)
+- Propagate errors with `try`, provide fallbacks with `catch`
+- Handle optionals with `orelse` or `if (value) |v|` unwrapping
+
+#### Resource Management
+- Pair resource acquisition with immediate `defer` cleanup
+- Use `errdefer` for partial-failure rollback
+- Remember: defers execute in LIFO order
+- Use nested blocks in loops to avoid defer accumulation
+
+#### Module Organization
+- Use `pub` explicitly for public API
+- Prefer explicit re-exports over implicit patterns
+- For large modules, use the module-as-directory pattern with a single entry point
+
+#### Anti-Patterns to Avoid
+- `defer` inside loops without nested blocks
+- Optionals for error states (use error unions instead)
+- Unmarked `comptime` parameters
+- Implicit re-exports
 
 ### Testing
 - All core logic must be testable via simulation (no direct syscalls)
