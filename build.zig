@@ -15,6 +15,12 @@ pub fn build(b: *std.Build) void {
     const options = b.addOptions();
     options.addOption([]const u8, "version", version);
 
+    // Fetch zig-clap dependency
+    const clap = b.dependency("clap", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     // Main executable
     const exe = b.addExecutable(.{
         .name = "fizz",
@@ -25,6 +31,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     exe.root_module.addOptions("build_options", options);
+    exe.root_module.addImport("clap", clap.module("clap"));
 
     b.installArtifact(exe);
 
@@ -46,6 +53,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     unit_tests.root_module.addOptions("build_options", options);
+    unit_tests.root_module.addImport("clap", clap.module("clap"));
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
     const test_step = b.step("test", "Run unit tests");
