@@ -52,3 +52,6 @@ pub const Args = struct {
         try clap.help(writer, clap.Help, &params, .{});
     }
 };
+
+// Note: printHelp and parse are integration-tested via CLI.
+// Unit testing requires a compatible writer type for clap.help.

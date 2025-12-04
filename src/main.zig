@@ -5,7 +5,7 @@ const cli = @import("cli/root.zig");
 pub fn main() u8 {
     // Initialize allocator with leak detection
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    defer std.debug.assert(gpa.deinit() == .ok);
     const allocator = gpa.allocator();
 
     // Setup stdout writer
