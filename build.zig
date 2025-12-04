@@ -7,7 +7,7 @@ pub fn build(b: *std.Build) void {
     // Get version from git describe
     const git_describe = b.run(&.{ "git", "describe", "--tags", "--always" });
     const version = if (git_describe.len > 0)
-        git_describe
+        std.mem.trimRight(u8, git_describe, "\n\r")
     else
         "0.0.0-dev";
 
@@ -15,8 +15,12 @@ pub fn build(b: *std.Build) void {
     const options = b.addOptions();
     options.addOption([]const u8, "version", version);
 
-    // Fetch zig-clap dependency
+    // Fetch dependencies
     const clap = b.dependency("clap", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const logz = b.dependency("logz", .{
         .target = target,
         .optimize = optimize,
     });
@@ -32,6 +36,7 @@ pub fn build(b: *std.Build) void {
     });
     exe.root_module.addOptions("build_options", options);
     exe.root_module.addImport("clap", clap.module("clap"));
+    exe.root_module.addImport("logz", logz.module("logz"));
 
     b.installArtifact(exe);
 
@@ -54,6 +59,7 @@ pub fn build(b: *std.Build) void {
     });
     unit_tests.root_module.addOptions("build_options", options);
     unit_tests.root_module.addImport("clap", clap.module("clap"));
+    unit_tests.root_module.addImport("logz", logz.module("logz"));
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
     const test_step = b.step("test", "Run unit tests");
