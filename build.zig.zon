@@ -1,0 +1,19 @@
+.{
+    .name = .fizz,
+    .version = "0.0.0",
+    .fingerprint = 0x1d0f8e323c01bfed,
+    .minimum_zig_version = "0.15.0",
+    .dependencies = .{
+        .clap = .{
+            .url = "https://github.com/Hejsil/zig-clap/archive/refs/tags/0.11.0.tar.gz",
+            .hash = "1220cf08a633c05eeb3b7a8317045c0f7f50d0300b9534b3e47ede19c033780ef824",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "README.md",
+        "LICENSE",
+    },
+}
