@@ -48,7 +48,7 @@ Consult these sources when reviewing:
 - [ ] Defers execute in LIFO order (considered)
 
 ### Fizz Architecture (per ADRs)
-- [ ] Core logic uses injected interfaces (Time, Random, Network, Runtime)
+- [ ] Core logic uses injected interfaces (Time, Random, Network, Runtime) (ADR-0008)
 - [ ] No direct syscalls in core orchestration code
 - [ ] CRDT patterns used where applicable (ADR-0003)
 - [ ] Compose compatibility maintained (ADR-0004)
