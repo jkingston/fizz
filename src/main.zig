@@ -10,12 +10,10 @@ pub fn main() u8 {
     const allocator = gpa.allocator();
 
     // Initialize logging
-    log.init(allocator) catch {
-        return 1;
-    };
+    log.init(.info);
     defer log.deinit();
 
-    log.info().string("event", "startup").string("version", build_options.version).log();
+    log.info().str("event", "startup").str("version", build_options.version).send();
 
     // Setup stdout writer
     const stdout = std.fs.File.stdout();

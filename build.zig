@@ -20,10 +20,6 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    const logz = b.dependency("logz", .{
-        .target = target,
-        .optimize = optimize,
-    });
 
     // Main executable
     const exe = b.addExecutable(.{
@@ -36,7 +32,6 @@ pub fn build(b: *std.Build) void {
     });
     exe.root_module.addOptions("build_options", options);
     exe.root_module.addImport("clap", clap.module("clap"));
-    exe.root_module.addImport("logz", logz.module("logz"));
 
     b.installArtifact(exe);
 
@@ -59,7 +54,6 @@ pub fn build(b: *std.Build) void {
     });
     unit_tests.root_module.addOptions("build_options", options);
     unit_tests.root_module.addImport("clap", clap.module("clap"));
-    unit_tests.root_module.addImport("logz", logz.module("logz"));
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
     const test_step = b.step("test", "Run unit tests");
