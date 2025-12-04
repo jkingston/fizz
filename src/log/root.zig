@@ -7,6 +7,13 @@
 //!     log.init(.info);
 //!     log.info().str("event", "startup").str("version", "1.0").msg("starting");
 //!     // Output: {"level":"info","event":"startup","version":"1.0","msg":"starting","ts":1234567890}
+//!
+//! Notes:
+//! - String values must be valid UTF-8. Non-ASCII bytes are passed through.
+//! - Buffer size is 512 bytes. Messages exceeding this are silently truncated.
+//! - init() must be called before spawning threads (global state is not atomic).
+//! - Direct syscalls (stderr, timestamp) are used - acceptable for logging
+//!   infrastructure per ADR-0008 exception for bootstrap/infrastructure code.
 
 const std = @import("std");
 
@@ -155,10 +162,18 @@ pub const Event = struct {
             self.appendByte('0');
             return;
         }
-        var v: u64 = if (val < 0) blk: {
+
+        // Handle negative numbers safely (including i64::MIN)
+        // Convert to u64 using bit manipulation to avoid overflow on negation
+        var v: u64 = undefined;
+        if (val < 0) {
             self.appendByte('-');
-            break :blk @intCast(-val);
-        } else @intCast(val);
+            // Safe conversion: ~val gives -(val+1), then add 1
+            // This works for all negative values including i64::MIN
+            v = ~@as(u64, @bitCast(val)) + 1;
+        } else {
+            v = @intCast(val);
+        }
 
         var tmp: [20]u8 = undefined;
         var i: usize = 0;
@@ -256,4 +271,32 @@ test "level ordering" {
 
     const e4 = err(); // err > warn, enabled
     try std.testing.expect(e4.enabled);
+}
+
+test "i64 min value" {
+    // Test that i64::MIN (-9223372036854775808) doesn't overflow
+    global_level = .debug;
+    const min_val = std.math.minInt(i64);
+    const e = info().int("val", min_val);
+    const output = e.buf[0..e.pos];
+    try std.testing.expect(std.mem.indexOf(u8, output, "-9223372036854775808") != null);
+}
+
+test "i64 max value" {
+    global_level = .debug;
+    const max_val = std.math.maxInt(i64);
+    const e = info().int("val", max_val);
+    const output = e.buf[0..e.pos];
+    try std.testing.expect(std.mem.indexOf(u8, output, "9223372036854775807") != null);
+}
+
+test "buffer overflow handling" {
+    global_level = .debug;
+    // Create a string longer than buffer size (512)
+    var long_string: [600]u8 = undefined;
+    @memset(&long_string, 'a');
+    const e = info().str("data", &long_string);
+    // Should not crash, buffer should be capped at 512
+    try std.testing.expect(e.pos <= 512);
+    try std.testing.expect(e.pos > 0); // Some data was written
 }
