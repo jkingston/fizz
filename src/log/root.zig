@@ -300,3 +300,22 @@ test "buffer overflow handling" {
     try std.testing.expect(e.pos <= 512);
     try std.testing.expect(e.pos > 0); // Some data was written
 }
+
+test "unicode string handling" {
+    global_level = .debug;
+
+    // Multi-byte UTF-8 characters (Japanese)
+    const e1 = info().str("msg", "日本語");
+    const output1 = e1.buf[0..e1.pos];
+    try std.testing.expect(std.mem.indexOf(u8, output1, "日本語") != null);
+
+    // Emoji (4-byte UTF-8)
+    const e2 = info().str("emoji", "🎉🚀");
+    const output2 = e2.buf[0..e2.pos];
+    try std.testing.expect(std.mem.indexOf(u8, output2, "🎉🚀") != null);
+
+    // Mixed ASCII and unicode
+    const e3 = info().str("mixed", "hello 世界 world");
+    const output3 = e3.buf[0..e3.pos];
+    try std.testing.expect(std.mem.indexOf(u8, output3, "hello 世界 world") != null);
+}
