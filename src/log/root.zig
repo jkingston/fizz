@@ -163,13 +163,13 @@ pub const Event = struct {
             return;
         }
 
-        // Handle negative numbers safely (including i64::MIN)
+        // Handle negative numbers safely (including i64 minimum value, see std.math.minInt(i64))
         // Convert to u64 using bit manipulation to avoid overflow on negation
         var v: u64 = undefined;
         if (val < 0) {
             self.appendByte('-');
             // Safe conversion: ~val gives -(val+1), then add 1
-            // This works for all negative values including i64::MIN
+            // This works for all negative values including the i64 minimum value
             v = ~@as(u64, @bitCast(val)) + 1;
         } else {
             v = @intCast(val);
@@ -274,7 +274,7 @@ test "level ordering" {
 }
 
 test "i64 min value" {
-    // Test that i64::MIN (-9223372036854775808) doesn't overflow
+    // Test that i64 minimum value (std.math.minInt(i64), -9223372036854775808) doesn't overflow
     global_level = .debug;
     const min_val = std.math.minInt(i64);
     const e = info().int("val", min_val);
