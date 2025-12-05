@@ -7,7 +7,7 @@ pub fn build(b: *std.Build) void {
     // Get version from git describe
     const git_describe = b.run(&.{ "git", "describe", "--tags", "--always" });
     const version = if (git_describe.len > 0)
-        git_describe
+        std.mem.trimRight(u8, git_describe, "\n\r")
     else
         "0.0.0-dev";
 
@@ -15,7 +15,7 @@ pub fn build(b: *std.Build) void {
     const options = b.addOptions();
     options.addOption([]const u8, "version", version);
 
-    // Fetch zig-clap dependency
+    // Fetch dependencies
     const clap = b.dependency("clap", .{
         .target = target,
         .optimize = optimize,
