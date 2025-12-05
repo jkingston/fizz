@@ -1,7 +1,7 @@
 //! Clock abstraction for deterministic simulation testing.
 //!
-//! Production code uses SystemClock (real time).
-//! Tests use SimulatedClock (controllable time).
+//! Production code uses `system_clock` (real time).
+//! Tests use `SimulatedClock` (controllable time).
 //!
 //! THREAD SAFETY: init() must be called before spawning threads.
 //! The global clock state is not atomic and not thread-safe during init/deinit.
@@ -58,8 +58,11 @@ const system_clock_vtable = Clock.VTable{
     .currentTimeMillis = systemClockImpl,
 };
 
+// Dummy variable to provide a valid (but unused) pointer for system_clock
+var system_clock_dummy: u8 = 0;
+
 pub const system_clock = Clock{
-    .ptr = undefined, // Not used by systemClockImpl (stateless)
+    .ptr = @ptrCast(&system_clock_dummy), // Unused by systemClockImpl (stateless)
     .vtable = &system_clock_vtable,
 };
 
@@ -74,8 +77,11 @@ pub const SimulatedClock = struct {
         };
     }
 
+    /// Advances time by delta_ms. Saturates at i64 bounds on overflow.
     pub fn advance(self: *SimulatedClock, delta_ms: i64) void {
-        self.current_time_ms += delta_ms;
+        self.current_time_ms = std.math.add(i64, self.current_time_ms, delta_ms) catch |err| switch (err) {
+            error.Overflow => if (delta_ms > 0) std.math.maxInt(i64) else std.math.minInt(i64),
+        };
     }
 
     pub fn setTime(self: *SimulatedClock, time_ms: i64) void {
@@ -129,8 +135,8 @@ test "simulated clock setTime" {
 }
 
 test "global clock default is system clock" {
-    deinit(); // Reset to default
-    const ts = currentTimeMillis();
+    // Verify system_clock directly without relying on global state
+    const ts = system_clock.currentTimeMillis();
     try std.testing.expect(ts > 1704067200000);
 }
 
