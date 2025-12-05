@@ -12,10 +12,12 @@
 //! - String values must be valid UTF-8. Non-ASCII bytes are passed through.
 //! - Buffer size is 4096 bytes. Messages exceeding this are silently truncated.
 //! - init() must be called before spawning threads (global state is not atomic).
-//! - Direct syscalls (stderr, timestamp) are used - acceptable for logging
+//! - Direct syscalls (stderr) are used - acceptable for logging
 //!   infrastructure per ADR-0008 exception for bootstrap/infrastructure code.
+//! - Timestamps use the sim/clock abstraction for deterministic testing.
 
 const std = @import("std");
+const clock = @import("../sim/clock.zig");
 
 pub const Level = enum(u8) {
     debug = 0,
@@ -189,7 +191,7 @@ pub const Event = struct {
 
     fn appendTimestamp(self: *Event) void {
         self.appendBytes(",\"ts\":");
-        self.appendInt(std.time.milliTimestamp());
+        self.appendInt(clock.currentTimeMillis());
     }
 
     fn flush(self: *Event) void {
@@ -318,4 +320,17 @@ test "unicode string handling" {
     const e3 = info().str("mixed", "hello 世界 world");
     const output3 = e3.buf[0..e3.pos];
     try std.testing.expect(std.mem.indexOf(u8, output3, "hello 世界 world") != null);
+}
+
+test "timestamp uses clock abstraction" {
+    var sim = clock.SimulatedClock.init(1234567890);
+    clock.init(sim.clock());
+    defer clock.deinit();
+
+    global_level = .debug;
+    var e = info().str("key", "value");
+    e.appendTimestamp();
+
+    const output = e.buf[0..e.pos];
+    try std.testing.expect(std.mem.indexOf(u8, output, "\"ts\":1234567890") != null);
 }
