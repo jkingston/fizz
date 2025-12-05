@@ -30,7 +30,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: mlugg/setup-zig@v2
+      - uses: mlugg/setup-zig@v2 # Matches ci.yml
         with:
           version: 0.15.2
 
@@ -47,6 +47,7 @@ jobs:
         with:
           name: ${{ matrix.artifact_name }}
           path: dist/${{ matrix.artifact_name }}
+          retention-days: 1
 
   release:
     name: Create Release
@@ -67,7 +68,7 @@ jobs:
           cat checksums-sha256.txt
 
       - name: Create GitHub Release
-        uses: ncipollo/release-action@v1
+        uses: ncipollo/release-action@6c75be85e571768fa31b40abf38de58ba0397db2 # v1
         with:
           artifacts: "release/*"
           generateReleaseNotes: true
