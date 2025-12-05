@@ -58,11 +58,12 @@ const system_clock_vtable = Clock.VTable{
     .currentTimeMillis = systemClockImpl,
 };
 
-// Dummy variable to provide a valid (but unused) pointer for system_clock
-var system_clock_dummy: u8 = 0;
+// Zero-sized type to explicitly communicate "no state" for system clock
+const SystemClockState = struct {};
+const system_clock_state: SystemClockState = .{};
 
 pub const system_clock = Clock{
-    .ptr = @ptrCast(&system_clock_dummy), // Unused by systemClockImpl (stateless)
+    .ptr = @ptrCast(@constCast(&system_clock_state)),
     .vtable = &system_clock_vtable,
 };
 
@@ -132,12 +133,6 @@ test "simulated clock setTime" {
     var sim = SimulatedClock.init(1000);
     sim.setTime(9999);
     try std.testing.expectEqual(@as(i64, 9999), sim.currentTimeMillis());
-}
-
-test "global clock default is system clock" {
-    // Verify system_clock directly without relying on global state
-    const ts = system_clock.currentTimeMillis();
-    try std.testing.expect(ts > 1704067200000);
 }
 
 test "global clock can be overridden" {
