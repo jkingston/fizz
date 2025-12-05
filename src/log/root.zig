@@ -10,7 +10,7 @@
 //!
 //! Notes:
 //! - String values must be valid UTF-8. Non-ASCII bytes are passed through.
-//! - Buffer size is 512 bytes. Messages exceeding this are silently truncated.
+//! - Buffer size is 4096 bytes. Messages exceeding this are silently truncated.
 //! - init() must be called before spawning threads (global state is not atomic).
 //! - Direct syscalls (stderr, timestamp) are used - acceptable for logging
 //!   infrastructure per ADR-0008 exception for bootstrap/infrastructure code.
@@ -48,7 +48,7 @@ pub fn err() Event {
 }
 
 pub const Event = struct {
-    buf: [512]u8 = undefined,
+    buf: [4096]u8 = undefined,
     pos: usize = 0,
     enabled: bool,
 
@@ -292,12 +292,12 @@ test "i64 max value" {
 
 test "buffer overflow handling" {
     global_level = .debug;
-    // Create a string longer than buffer size (512)
-    var long_string: [600]u8 = undefined;
+    // Create a string longer than buffer size (4096)
+    var long_string: [5000]u8 = undefined;
     @memset(&long_string, 'a');
     const e = info().str("data", &long_string);
-    // Should not crash, buffer should be capped at 512
-    try std.testing.expect(e.pos <= 512);
+    // Should not crash, buffer should be capped at 4096
+    try std.testing.expect(e.pos <= 4096);
     try std.testing.expect(e.pos > 0); // Some data was written
 }
 
