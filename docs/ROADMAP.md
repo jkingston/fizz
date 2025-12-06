@@ -6,10 +6,10 @@ Implementation milestones for Fizz.
 
 | | |
 |---|---|
-| **Phase** | Design |
+| **Phase** | Implementation |
 | **MVP** | M2 (Single-Node Orchestration) |
-| **Next** | M0 - Project Bootstrap |
-| **Started** | Not yet |
+| **Next** | M1 - Compose Parsing |
+| **Started** | 2025-12-05 |
 
 ---
 
@@ -17,7 +17,7 @@ Implementation milestones for Fizz.
 
 | # | Milestone | Status | User Value |
 |---|-----------|--------|------------|
-| 0 | Project Bootstrap | Not started | Project builds |
+| 0 | Project Bootstrap | **Complete** | Project builds |
 | 1 | Compose Parsing | Not started | Validate compose files |
 | 2 | Single-Node Orchestration | Not started | **MVP: Run compose files locally** |
 | 3 | State & Persistence | Not started | Survives restarts |
@@ -80,13 +80,13 @@ M7 (Scheduler) ◄──────────── Core cluster value
 **Goal:** Buildable project with development infrastructure
 
 **Outcomes:**
-- [ ] Project compiles with `zig build`
-- [ ] Tests run with `zig build test`
-- [ ] Structured JSON logging operational
-- [ ] CLI framework parses commands
-- [ ] CI pipeline runs on commits
+- [x] Project compiles with `zig build`
+- [x] Tests run with `zig build test`
+- [x] Structured JSON logging operational
+- [x] CLI framework parses commands
+- [x] CI pipeline runs on commits
 
-**Exit Criteria:** `fizz --version` prints version string
+**Exit Criteria:** `fizz --version` prints version string ✓
 
 ---
 
@@ -313,4 +313,4 @@ _Updates will be logged here as milestones complete._
 
 | Date | Milestone | Notes |
 |------|-----------|-------|
-| - | - | - |
+| 2025-12-06 | M0 | Project Bootstrap complete |
