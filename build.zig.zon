@@ -8,6 +8,10 @@
             .url = "https://github.com/Hejsil/zig-clap/archive/refs/tags/0.11.0.tar.gz",
             .hash = "1220cf08a633c05eeb3b7a8317045c0f7f50d0300b9534b3e47ede19c033780ef824",
         },
+        .yaml = .{
+            .url = "https://github.com/yaml/libyaml/archive/refs/tags/0.2.5.tar.gz",
+            .hash = "N-V-__8AAFisCAAMQCHLFuzfjTcHCY_2lOFAyfksvXa7HzDL",
+        },
     },
     .paths = .{
         "build.zig",

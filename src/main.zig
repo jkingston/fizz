@@ -49,4 +49,5 @@ test {
     _ = @import("cli/args.zig");
     _ = @import("log/root.zig");
     _ = @import("sim/clock.zig");
+    _ = @import("compose/yaml.zig");
 }
