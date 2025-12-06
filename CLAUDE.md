@@ -141,6 +141,6 @@ fizz down
 
 ### Running tests
 ```bash
-zig build test              # Unit tests
-zig build test-simulation   # Simulation tests (planned)
+zig build test             # Unit tests
+zig build test-simulation  # Simulation tests (planned)
 ```

@@ -33,7 +33,9 @@ pub fn init(level: Level) void {
     global_level = level;
 }
 
-pub fn deinit() void {}
+pub fn deinit() void {
+    // No-op: kept for API symmetry and future resource cleanup
+}
 
 // Level constructors - return Event by value (stack allocated)
 pub fn debug() Event {
@@ -203,7 +205,10 @@ pub const Event = struct {
 // --- Tests ---
 
 test "info event produces valid JSON" {
+    const saved_level = global_level;
+    defer global_level = saved_level;
     global_level = .debug;
+
     const e = info().str("key", "value").int("num", 42);
     const output = e.buf[0..e.pos];
     try std.testing.expect(std.mem.startsWith(u8, output, "{\"level\":\"info\""));
@@ -212,14 +217,20 @@ test "info event produces valid JSON" {
 }
 
 test "disabled level produces no output" {
+    const saved_level = global_level;
+    defer global_level = saved_level;
     global_level = .err;
+
     const e = info().str("key", "value"); // info < err, so disabled
     try std.testing.expect(e.pos == 0);
     try std.testing.expect(!e.enabled);
 }
 
 test "json escaping" {
+    const saved_level = global_level;
+    defer global_level = saved_level;
     global_level = .debug;
+
     const e = info().str("msg", "hello\"world\n");
     const output = e.buf[0..e.pos];
     try std.testing.expect(std.mem.indexOf(u8, output, "\\\"") != null);
@@ -227,6 +238,8 @@ test "json escaping" {
 }
 
 test "integer formatting" {
+    const saved_level = global_level;
+    defer global_level = saved_level;
     global_level = .debug;
 
     // Positive
@@ -243,7 +256,10 @@ test "integer formatting" {
 }
 
 test "boolean formatting" {
+    const saved_level = global_level;
+    defer global_level = saved_level;
     global_level = .debug;
+
     const e = info().boolean("flag", true).boolean("other", false);
     const output = e.buf[0..e.pos];
     try std.testing.expect(std.mem.indexOf(u8, output, "\"flag\":true") != null);
@@ -251,7 +267,10 @@ test "boolean formatting" {
 }
 
 test "control character escaping" {
+    const saved_level = global_level;
+    defer global_level = saved_level;
     global_level = .debug;
+
     const e = info().str("data", "a\x00b\x1fc");
     const output = e.buf[0..e.pos];
     try std.testing.expect(std.mem.indexOf(u8, output, "\\u0000") != null);
@@ -259,7 +278,8 @@ test "control character escaping" {
 }
 
 test "level ordering" {
-    // Test that level ordering works correctly
+    const saved_level = global_level;
+    defer global_level = saved_level;
     global_level = .warn;
 
     const e1 = debug(); // debug < warn, disabled
@@ -276,8 +296,11 @@ test "level ordering" {
 }
 
 test "i64 min value" {
-    // Test that i64 minimum value (std.math.minInt(i64), -9223372036854775808) doesn't overflow
+    const saved_level = global_level;
+    defer global_level = saved_level;
     global_level = .debug;
+
+    // Test that i64 minimum value (std.math.minInt(i64), -9223372036854775808) doesn't overflow
     const min_val = std.math.minInt(i64);
     const e = info().int("val", min_val);
     const output = e.buf[0..e.pos];
@@ -285,7 +308,10 @@ test "i64 min value" {
 }
 
 test "i64 max value" {
+    const saved_level = global_level;
+    defer global_level = saved_level;
     global_level = .debug;
+
     const max_val = std.math.maxInt(i64);
     const e = info().int("val", max_val);
     const output = e.buf[0..e.pos];
@@ -293,7 +319,10 @@ test "i64 max value" {
 }
 
 test "buffer overflow handling" {
+    const saved_level = global_level;
+    defer global_level = saved_level;
     global_level = .debug;
+
     // Create a string longer than buffer size (4096)
     var long_string: [5000]u8 = undefined;
     @memset(&long_string, 'a');
@@ -304,6 +333,8 @@ test "buffer overflow handling" {
 }
 
 test "unicode string handling" {
+    const saved_level = global_level;
+    defer global_level = saved_level;
     global_level = .debug;
 
     // Multi-byte UTF-8 characters (Japanese)
@@ -323,6 +354,9 @@ test "unicode string handling" {
 }
 
 test "timestamp uses clock abstraction" {
+    const saved_level = global_level;
+    defer global_level = saved_level;
+
     var sim = clock.SimulatedClock.init(1234567890);
     clock.init(sim.clock());
     defer clock.deinit();
@@ -333,4 +367,14 @@ test "timestamp uses clock abstraction" {
 
     const output = e.buf[0..e.pos];
     try std.testing.expect(std.mem.indexOf(u8, output, "\"ts\":1234567890") != null);
+}
+
+test "empty string field" {
+    const saved_level = global_level;
+    defer global_level = saved_level;
+    global_level = .debug;
+
+    const e = info().str("empty", "");
+    const output = e.buf[0..e.pos];
+    try std.testing.expect(std.mem.indexOf(u8, output, "\"empty\":\"\"") != null);
 }

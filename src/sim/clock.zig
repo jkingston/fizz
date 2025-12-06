@@ -142,3 +142,15 @@ test "global clock can be overridden" {
 
     try std.testing.expectEqual(@as(i64, 42), currentTimeMillis());
 }
+
+test "simulated clock overflow saturates to max" {
+    var sim = SimulatedClock.init(std.math.maxInt(i64) - 100);
+    sim.advance(200);
+    try std.testing.expectEqual(std.math.maxInt(i64), sim.currentTimeMillis());
+}
+
+test "simulated clock underflow saturates to min" {
+    var sim = SimulatedClock.init(std.math.minInt(i64) + 100);
+    sim.advance(-200);
+    try std.testing.expectEqual(std.math.minInt(i64), sim.currentTimeMillis());
+}
