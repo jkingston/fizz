@@ -1,0 +1,11 @@
+services:
+  privileged-app:
+    image: myapp
+    privileged: true
+  capability-app:
+    image: myapp
+    cap_add:
+      - NET_ADMIN
+      - SYS_PTRACE
+    cap_drop:
+      - MKNOD

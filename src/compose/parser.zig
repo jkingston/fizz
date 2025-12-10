@@ -16,9 +16,8 @@ const Healthcheck = types.Healthcheck;
 const VolumeMount = types.VolumeMount;
 const Volume = types.Volume;
 const Network = types.Network;
-const XFizz = types.XFizz;
-const XFizzService = types.XFizzService;
-const Placement = types.Placement;
+const RestartPolicy = types.RestartPolicy;
+const Logging = types.Logging;
 
 pub const ParseError = error{
     YamlError,
@@ -116,8 +115,12 @@ const Parser = struct {
                 try self.parseVolumes();
             } else if (std.mem.eql(u8, key, "networks")) {
                 try self.parseNetworks();
-            } else if (std.mem.eql(u8, key, "x-fizz")) {
-                try self.parseXFizz();
+            } else if (std.mem.eql(u8, key, "version")) {
+                // Version is obsolete per compose spec, skip silently
+                try self.skipValue();
+            } else if (std.mem.eql(u8, key, "name")) {
+                // Project name
+                self.result.name = try self.parseInterpolatedScalar();
             } else {
                 // Unknown key - warn and skip
                 self.diagnostics.addWarning(key_event.?.start_mark, "unknown key: {s}", .{key});
@@ -190,6 +193,87 @@ const Parser = struct {
                 try self.parseHealthcheck(service);
             } else if (std.mem.eql(u8, key, "volumes")) {
                 try self.parseServiceVolumes(service);
+            } else if (std.mem.eql(u8, key, "command")) {
+                try self.parseStringOrList(&service.command);
+            } else if (std.mem.eql(u8, key, "entrypoint")) {
+                try self.parseStringOrList(&service.entrypoint);
+            } else if (std.mem.eql(u8, key, "working_dir")) {
+                service.working_dir = try self.parseInterpolatedScalar();
+            } else if (std.mem.eql(u8, key, "user")) {
+                service.user = try self.parseInterpolatedScalar();
+            } else if (std.mem.eql(u8, key, "container_name")) {
+                service.container_name = try self.parseInterpolatedScalar();
+            } else if (std.mem.eql(u8, key, "hostname")) {
+                service.hostname = try self.parseInterpolatedScalar();
+            } else if (std.mem.eql(u8, key, "domainname")) {
+                service.domainname = try self.parseInterpolatedScalar();
+            } else if (std.mem.eql(u8, key, "restart")) {
+                if (try self.parseScalar()) |val| {
+                    service.restart = RestartPolicy.parse(val);
+                }
+            } else if (std.mem.eql(u8, key, "init")) {
+                service.run_init = try self.parseBool();
+            } else if (std.mem.eql(u8, key, "read_only")) {
+                service.read_only = try self.parseBool();
+            } else if (std.mem.eql(u8, key, "privileged")) {
+                service.privileged = try self.parseBool();
+            } else if (std.mem.eql(u8, key, "stop_signal")) {
+                service.stop_signal = try self.parseInterpolatedScalar();
+            } else if (std.mem.eql(u8, key, "stop_grace_period")) {
+                if (try self.parseScalar()) |val| {
+                    service.stop_grace_period_ns = types.parseDuration(val) catch {
+                        self.diagnostics.addWarning(key_event.?.start_mark, "invalid stop_grace_period: {s}", .{val});
+                        continue;
+                    };
+                }
+            } else if (std.mem.eql(u8, key, "expose")) {
+                try self.parseStringList(&service.expose);
+            } else if (std.mem.eql(u8, key, "dns")) {
+                try self.parseStringOrList(&service.dns);
+            } else if (std.mem.eql(u8, key, "dns_search")) {
+                try self.parseStringOrList(&service.dns_search);
+            } else if (std.mem.eql(u8, key, "extra_hosts")) {
+                try self.parseStringList(&service.extra_hosts);
+            } else if (std.mem.eql(u8, key, "cap_add")) {
+                try self.parseStringList(&service.cap_add);
+            } else if (std.mem.eql(u8, key, "cap_drop")) {
+                try self.parseStringList(&service.cap_drop);
+            } else if (std.mem.eql(u8, key, "networks")) {
+                try self.parseServiceNetworks(service);
+            } else if (std.mem.eql(u8, key, "labels")) {
+                try self.parseLabels(service);
+            } else if (std.mem.eql(u8, key, "env_file")) {
+                try self.parseStringOrList(&service.env_file);
+            } else if (std.mem.eql(u8, key, "mem_limit")) {
+                if (try self.parseScalar()) |val| {
+                    service.mem_limit = types.parseByteSize(val) catch {
+                        self.diagnostics.addWarning(key_event.?.start_mark, "invalid mem_limit: {s}", .{val});
+                        continue;
+                    };
+                }
+            } else if (std.mem.eql(u8, key, "mem_reservation")) {
+                if (try self.parseScalar()) |val| {
+                    service.mem_reservation = types.parseByteSize(val) catch {
+                        self.diagnostics.addWarning(key_event.?.start_mark, "invalid mem_reservation: {s}", .{val});
+                        continue;
+                    };
+                }
+            } else if (std.mem.eql(u8, key, "cpus")) {
+                if (try self.parseScalar()) |val| {
+                    service.cpus = std.fmt.parseFloat(f64, val) catch {
+                        self.diagnostics.addWarning(key_event.?.start_mark, "invalid cpus: {s}", .{val});
+                        continue;
+                    };
+                }
+            } else if (std.mem.eql(u8, key, "pids_limit")) {
+                if (try self.parseScalar()) |val| {
+                    service.pids_limit = std.fmt.parseInt(u32, val, 10) catch {
+                        self.diagnostics.addWarning(key_event.?.start_mark, "invalid pids_limit: {s}", .{val});
+                        continue;
+                    };
+                }
+            } else if (std.mem.eql(u8, key, "logging")) {
+                try self.parseLogging(service);
             } else {
                 // Unknown service key - warn and skip
                 self.diagnostics.addWarning(key_event.?.start_mark, "unknown service key: {s}", .{key});
@@ -526,117 +610,6 @@ const Parser = struct {
         }
     }
 
-    fn parseXFizz(self: *Parser) ParseError!void {
-        const event = self.nextEvent() catch return error.YamlError;
-        if (event == null or event.?.type != .mapping_start) {
-            self.diagnostics.addError(self.current_mark, "x-fizz must be a mapping", .{});
-            return;
-        }
-
-        var xfizz = XFizz.init(self.allocator);
-        errdefer xfizz.deinit(self.allocator);
-
-        while (true) {
-            const key_event = self.nextEvent() catch return error.YamlError;
-            if (key_event == null) break;
-            if (key_event.?.type == .mapping_end) break;
-
-            if (key_event.?.type != .scalar) {
-                try self.skipValue();
-                continue;
-            }
-
-            const svc_name = self.allocator.dupe(u8, key_event.?.data.scalar.value) catch
-                return error.OutOfMemory;
-            errdefer self.allocator.free(svc_name);
-
-            var xsvc = XFizzService{};
-            errdefer if (xsvc.placement) |*p| p.deinit(self.allocator);
-
-            try self.parseXFizzService(&xsvc);
-
-            xfizz.services.put(svc_name, xsvc) catch
-                return error.OutOfMemory;
-        }
-
-        self.result.x_fizz = xfizz;
-    }
-
-    fn parseXFizzService(self: *Parser, xsvc: *XFizzService) ParseError!void {
-        const event = self.nextEvent() catch return error.YamlError;
-        if (event == null or event.?.type != .mapping_start) {
-            return;
-        }
-
-        while (true) {
-            const key_event = self.nextEvent() catch return error.YamlError;
-            if (key_event == null) break;
-            if (key_event.?.type == .mapping_end) break;
-
-            if (key_event.?.type != .scalar) {
-                try self.skipValue();
-                continue;
-            }
-
-            const key = key_event.?.data.scalar.value;
-
-            if (std.mem.eql(u8, key, "replicas")) {
-                if (try self.parseScalar()) |val| {
-                    xsvc.replicas = std.fmt.parseInt(u32, val, 10) catch 1;
-                }
-            } else if (std.mem.eql(u8, key, "placement")) {
-                try self.parseXFizzPlacement(xsvc);
-            } else {
-                try self.skipValue();
-            }
-        }
-    }
-
-    fn parseXFizzPlacement(self: *Parser, xsvc: *XFizzService) ParseError!void {
-        const event = self.nextEvent() catch return error.YamlError;
-        if (event == null or event.?.type != .mapping_start) {
-            return;
-        }
-
-        var placement = Placement.init(self.allocator);
-        errdefer placement.deinit(self.allocator);
-
-        while (true) {
-            const key_event = self.nextEvent() catch return error.YamlError;
-            if (key_event == null) break;
-            if (key_event.?.type == .mapping_end) break;
-
-            if (key_event.?.type != .scalar) {
-                try self.skipValue();
-                continue;
-            }
-
-            const key = key_event.?.data.scalar.value;
-
-            if (std.mem.eql(u8, key, "constraints")) {
-                const seq_event = self.nextEvent() catch return error.YamlError;
-                if (seq_event != null and seq_event.?.type == .sequence_start) {
-                    while (true) {
-                        const item = self.nextEvent() catch return error.YamlError;
-                        if (item == null) break;
-                        if (item.?.type == .sequence_end) break;
-
-                        if (item.?.type == .scalar) {
-                            const constraint = self.allocator.dupe(u8, item.?.data.scalar.value) catch
-                                return error.OutOfMemory;
-                            placement.constraints.append(self.allocator, constraint) catch
-                                return error.OutOfMemory;
-                        }
-                    }
-                }
-            } else {
-                try self.skipValue();
-            }
-        }
-
-        xsvc.placement = placement;
-    }
-
     // --- Helper functions ---
 
     fn nextEvent(self: *Parser) !?yaml.Event {
@@ -694,6 +667,236 @@ const Parser = struct {
                 }
             },
             else => {},
+        }
+    }
+
+    /// Parse a boolean value from YAML (true/false, yes/no, on/off).
+    fn parseBool(self: *Parser) ParseError!bool {
+        const event = self.nextEvent() catch return error.YamlError;
+        if (event == null) return false;
+        if (event.?.type != .scalar) return false;
+
+        const val = event.?.data.scalar.value;
+        if (std.mem.eql(u8, val, "true") or
+            std.mem.eql(u8, val, "yes") or
+            std.mem.eql(u8, val, "on") or
+            std.mem.eql(u8, val, "1"))
+        {
+            return true;
+        }
+        return false;
+    }
+
+    /// Parse a value that can be either a string or a list of strings.
+    /// If it's a string, it's added as a single item (not split).
+    fn parseStringOrList(self: *Parser, list: *std.ArrayList([]const u8)) ParseError!void {
+        const event = self.nextEvent() catch return error.YamlError;
+        if (event == null) return;
+
+        if (event.?.type == .sequence_start) {
+            while (true) {
+                const item = self.nextEvent() catch return error.YamlError;
+                if (item == null) break;
+                if (item.?.type == .sequence_end) break;
+
+                if (item.?.type == .scalar) {
+                    const val = self.allocator.dupe(u8, item.?.data.scalar.value) catch
+                        return error.OutOfMemory;
+                    list.append(self.allocator, val) catch return error.OutOfMemory;
+                }
+            }
+        } else if (event.?.type == .scalar) {
+            // Single string value - add as one item (don't split)
+            const val = self.allocator.dupe(u8, event.?.data.scalar.value) catch
+                return error.OutOfMemory;
+            list.append(self.allocator, val) catch return error.OutOfMemory;
+        }
+    }
+
+    /// Parse a list of strings.
+    fn parseStringList(self: *Parser, list: *std.ArrayList([]const u8)) ParseError!void {
+        const event = self.nextEvent() catch return error.YamlError;
+        if (event == null) return;
+
+        if (event.?.type != .sequence_start) {
+            self.diagnostics.addError(event.?.start_mark, "expected a list", .{});
+            return;
+        }
+
+        while (true) {
+            const item = self.nextEvent() catch return error.YamlError;
+            if (item == null) break;
+            if (item.?.type == .sequence_end) break;
+
+            if (item.?.type == .scalar) {
+                const val = self.allocator.dupe(u8, item.?.data.scalar.value) catch
+                    return error.OutOfMemory;
+                list.append(self.allocator, val) catch return error.OutOfMemory;
+            }
+        }
+    }
+
+    /// Parse service-level networks (simple list form).
+    fn parseServiceNetworks(self: *Parser, service: *Service) ParseError!void {
+        const event = self.nextEvent() catch return error.YamlError;
+        if (event == null) return;
+
+        if (event.?.type == .sequence_start) {
+            // Simple list: [frontend, backend]
+            while (true) {
+                const item = self.nextEvent() catch return error.YamlError;
+                if (item == null) break;
+                if (item.?.type == .sequence_end) break;
+
+                if (item.?.type == .scalar) {
+                    const val = self.allocator.dupe(u8, item.?.data.scalar.value) catch
+                        return error.OutOfMemory;
+                    service.networks.append(self.allocator, val) catch return error.OutOfMemory;
+                }
+            }
+        } else if (event.?.type == .mapping_start) {
+            // Extended form: network_name: {aliases: [...]}
+            // For now, just capture the network names
+            while (true) {
+                const key_event = self.nextEvent() catch return error.YamlError;
+                if (key_event == null) break;
+                if (key_event.?.type == .mapping_end) break;
+
+                if (key_event.?.type == .scalar) {
+                    const network_name = self.allocator.dupe(u8, key_event.?.data.scalar.value) catch
+                        return error.OutOfMemory;
+                    service.networks.append(self.allocator, network_name) catch return error.OutOfMemory;
+                }
+                // Skip the network config value
+                try self.skipValue();
+            }
+        } else {
+            self.diagnostics.addError(event.?.start_mark, "networks must be a list or mapping", .{});
+        }
+    }
+
+    /// Parse labels (can be a mapping or list of KEY=value).
+    fn parseLabels(self: *Parser, service: *Service) ParseError!void {
+        const event = self.nextEvent() catch return error.YamlError;
+        if (event == null) return;
+
+        if (event.?.type == .mapping_start) {
+            // mapping form: key: value
+            while (true) {
+                const key_event = self.nextEvent() catch return error.YamlError;
+                if (key_event == null) break;
+                if (key_event.?.type == .mapping_end) break;
+
+                if (key_event.?.type != .scalar) {
+                    try self.skipValue();
+                    continue;
+                }
+
+                const key = self.allocator.dupe(u8, key_event.?.data.scalar.value) catch
+                    return error.OutOfMemory;
+                errdefer self.allocator.free(key);
+
+                const value = try self.parseInterpolatedScalar();
+                errdefer if (value) |v| self.allocator.free(v);
+
+                service.labels.put(key, value orelse "") catch
+                    return error.OutOfMemory;
+            }
+        } else if (event.?.type == .sequence_start) {
+            // list form: - "key=value"
+            while (true) {
+                const item = self.nextEvent() catch return error.YamlError;
+                if (item == null) break;
+                if (item.?.type == .sequence_end) break;
+
+                if (item.?.type == .scalar) {
+                    const item_str = item.?.data.scalar.value;
+                    if (std.mem.indexOf(u8, item_str, "=")) |eq_idx| {
+                        const key = self.allocator.dupe(u8, item_str[0..eq_idx]) catch
+                            return error.OutOfMemory;
+                        errdefer self.allocator.free(key);
+
+                        const value = self.allocator.dupe(u8, item_str[eq_idx + 1 ..]) catch
+                            return error.OutOfMemory;
+                        errdefer self.allocator.free(value);
+
+                        service.labels.put(key, value) catch
+                            return error.OutOfMemory;
+                    } else {
+                        // Label without value
+                        const key = self.allocator.dupe(u8, item_str) catch
+                            return error.OutOfMemory;
+                        service.labels.put(key, "") catch
+                            return error.OutOfMemory;
+                    }
+                }
+            }
+        } else {
+            self.diagnostics.addError(event.?.start_mark, "labels must be a mapping or list", .{});
+        }
+    }
+
+    /// Parse logging configuration.
+    fn parseLogging(self: *Parser, service: *Service) ParseError!void {
+        const event = self.nextEvent() catch return error.YamlError;
+        if (event == null or event.?.type != .mapping_start) {
+            self.diagnostics.addError(self.current_mark, "logging must be a mapping", .{});
+            return;
+        }
+
+        var logging = Logging.init(self.allocator);
+        errdefer logging.deinit(self.allocator);
+
+        while (true) {
+            const key_event = self.nextEvent() catch return error.YamlError;
+            if (key_event == null) break;
+            if (key_event.?.type == .mapping_end) break;
+
+            if (key_event.?.type != .scalar) {
+                try self.skipValue();
+                continue;
+            }
+
+            const key = key_event.?.data.scalar.value;
+
+            if (std.mem.eql(u8, key, "driver")) {
+                logging.driver = try self.parseInterpolatedScalar();
+            } else if (std.mem.eql(u8, key, "options")) {
+                try self.parseLoggingOptions(&logging);
+            } else {
+                try self.skipValue();
+            }
+        }
+
+        service.logging = logging;
+    }
+
+    /// Parse logging options mapping.
+    fn parseLoggingOptions(self: *Parser, logging: *Logging) ParseError!void {
+        const event = self.nextEvent() catch return error.YamlError;
+        if (event == null or event.?.type != .mapping_start) {
+            return;
+        }
+
+        while (true) {
+            const key_event = self.nextEvent() catch return error.YamlError;
+            if (key_event == null) break;
+            if (key_event.?.type == .mapping_end) break;
+
+            if (key_event.?.type != .scalar) {
+                try self.skipValue();
+                continue;
+            }
+
+            const key = self.allocator.dupe(u8, key_event.?.data.scalar.value) catch
+                return error.OutOfMemory;
+            errdefer self.allocator.free(key);
+
+            const value = try self.parseInterpolatedScalar();
+            errdefer if (value) |v| self.allocator.free(v);
+
+            logging.options.put(key, value orelse "") catch
+                return error.OutOfMemory;
         }
     }
 };
@@ -835,32 +1038,6 @@ test "parse volumes" {
     try std.testing.expectEqual(@as(usize, 1), db.volumes.items.len);
     try std.testing.expectEqualStrings("db_data", db.volumes.items[0].source);
     try std.testing.expectEqualStrings("/var/lib/mysql", db.volumes.items[0].target);
-}
-
-test "parse x-fizz" {
-    const input =
-        \\services:
-        \\  web:
-        \\    image: nginx
-        \\x-fizz:
-        \\  web:
-        \\    replicas: 3
-        \\    placement:
-        \\      constraints:
-        \\        - node.role == worker
-    ;
-
-    var env = interpolation.EnvMap.init(std.testing.allocator);
-    defer env.deinit();
-
-    var result = try parse(std.testing.allocator, input, &env);
-    defer result.deinit();
-
-    try std.testing.expect(result.file.?.x_fizz != null);
-    const xweb = result.file.?.x_fizz.?.services.get("web").?;
-    try std.testing.expectEqual(@as(u32, 3), xweb.replicas);
-    try std.testing.expect(xweb.placement != null);
-    try std.testing.expectEqual(@as(usize, 1), xweb.placement.?.constraints.items.len);
 }
 
 test "unknown keys produce warnings" {

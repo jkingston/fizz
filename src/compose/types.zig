@@ -9,22 +9,24 @@ const Allocator = std.mem.Allocator;
 /// A parsed Docker Compose file.
 pub const ComposeFile = struct {
     allocator: Allocator,
+    name: ?[]const u8 = null,
     services: std.StringArrayHashMap(Service),
     volumes: std.StringArrayHashMap(Volume),
     networks: std.StringArrayHashMap(Network),
-    x_fizz: ?XFizz = null,
 
     pub fn init(allocator: Allocator) ComposeFile {
         return .{
             .allocator = allocator,
+            .name = null,
             .services = std.StringArrayHashMap(Service).init(allocator),
             .volumes = std.StringArrayHashMap(Volume).init(allocator),
             .networks = std.StringArrayHashMap(Network).init(allocator),
-            .x_fizz = null,
         };
     }
 
     pub fn deinit(self: *ComposeFile) void {
+        if (self.name) |n| self.allocator.free(n);
+
         // Free service contents (service.name is the same as the key, so don't double-free)
         for (self.services.values()) |*service| {
             service.deinit(self.allocator);
@@ -42,11 +44,6 @@ pub const ComposeFile = struct {
             self.allocator.free(key);
         }
         self.networks.deinit();
-
-        // Free x-fizz
-        if (self.x_fizz) |*xf| {
-            xf.deinit(self.allocator);
-        }
     }
 };
 
@@ -60,6 +57,49 @@ pub const Service = struct {
     healthcheck: ?Healthcheck = null,
     volumes: std.ArrayList(VolumeMount),
 
+    // Command and entrypoint
+    command: std.ArrayList([]const u8),
+    entrypoint: std.ArrayList([]const u8),
+    working_dir: ?[]const u8 = null,
+    user: ?[]const u8 = null,
+
+    // Container identity
+    container_name: ?[]const u8 = null,
+    hostname: ?[]const u8 = null,
+    domainname: ?[]const u8 = null,
+
+    // Lifecycle
+    restart: RestartPolicy = .{},
+    run_init: bool = false,
+    stop_signal: ?[]const u8 = null,
+    stop_grace_period_ns: u64 = 10 * std.time.ns_per_s,
+
+    // Security
+    read_only: bool = false,
+    privileged: bool = false,
+    cap_add: std.ArrayList([]const u8),
+    cap_drop: std.ArrayList([]const u8),
+
+    // Networking
+    expose: std.ArrayList([]const u8),
+    dns: std.ArrayList([]const u8),
+    dns_search: std.ArrayList([]const u8),
+    extra_hosts: std.ArrayList([]const u8),
+    networks: std.ArrayList([]const u8),
+
+    // Configuration
+    labels: std.StringArrayHashMap([]const u8),
+    env_file: std.ArrayList([]const u8),
+
+    // Resource limits
+    mem_limit: ?u64 = null,
+    mem_reservation: ?u64 = null,
+    cpus: ?f64 = null,
+    pids_limit: ?u32 = null,
+
+    // Logging
+    logging: ?Logging = null,
+
     pub fn init(allocator: Allocator, name: []const u8) Service {
         return .{
             .name = name,
@@ -69,6 +109,33 @@ pub const Service = struct {
             .depends_on = .{},
             .healthcheck = null,
             .volumes = .{},
+            .command = .{},
+            .entrypoint = .{},
+            .working_dir = null,
+            .user = null,
+            .container_name = null,
+            .hostname = null,
+            .domainname = null,
+            .restart = .{},
+            .run_init = false,
+            .stop_signal = null,
+            .stop_grace_period_ns = 10 * std.time.ns_per_s,
+            .read_only = false,
+            .privileged = false,
+            .cap_add = .{},
+            .cap_drop = .{},
+            .expose = .{},
+            .dns = .{},
+            .dns_search = .{},
+            .extra_hosts = .{},
+            .networks = .{},
+            .labels = std.StringArrayHashMap([]const u8).init(allocator),
+            .env_file = .{},
+            .mem_limit = null,
+            .mem_reservation = null,
+            .cpus = null,
+            .pids_limit = null,
+            .logging = null,
         };
     }
 
@@ -100,6 +167,49 @@ pub const Service = struct {
             allocator.free(vol.target);
         }
         self.volumes.deinit(allocator);
+
+        // Free command and entrypoint
+        for (self.command.items) |item| allocator.free(item);
+        self.command.deinit(allocator);
+        for (self.entrypoint.items) |item| allocator.free(item);
+        self.entrypoint.deinit(allocator);
+
+        if (self.working_dir) |wd| allocator.free(wd);
+        if (self.user) |u| allocator.free(u);
+        if (self.container_name) |cn| allocator.free(cn);
+        if (self.hostname) |h| allocator.free(h);
+        if (self.domainname) |d| allocator.free(d);
+        if (self.stop_signal) |ss| allocator.free(ss);
+
+        // Free security lists
+        for (self.cap_add.items) |item| allocator.free(item);
+        self.cap_add.deinit(allocator);
+        for (self.cap_drop.items) |item| allocator.free(item);
+        self.cap_drop.deinit(allocator);
+
+        // Free networking lists
+        for (self.expose.items) |item| allocator.free(item);
+        self.expose.deinit(allocator);
+        for (self.dns.items) |item| allocator.free(item);
+        self.dns.deinit(allocator);
+        for (self.dns_search.items) |item| allocator.free(item);
+        self.dns_search.deinit(allocator);
+        for (self.extra_hosts.items) |item| allocator.free(item);
+        self.extra_hosts.deinit(allocator);
+        for (self.networks.items) |item| allocator.free(item);
+        self.networks.deinit(allocator);
+
+        // Free labels
+        for (self.labels.keys()) |key| allocator.free(key);
+        for (self.labels.values()) |value| allocator.free(value);
+        self.labels.deinit();
+
+        // Free env_file
+        for (self.env_file.items) |item| allocator.free(item);
+        self.env_file.deinit(allocator);
+
+        // Free logging
+        if (self.logging) |*log| log.deinit(allocator);
     }
 };
 
@@ -239,57 +349,80 @@ pub const Network = struct {
     // Currently just a marker - no configuration parsed yet
 };
 
-/// Fizz-specific extensions (x-fizz).
-pub const XFizz = struct {
-    services: std.StringArrayHashMap(XFizzService),
+/// Restart policy for a service.
+pub const RestartPolicy = struct {
+    policy: Policy = .no,
+    max_retries: ?u32 = null,
 
-    pub fn init(allocator: Allocator) XFizz {
+    pub const Policy = enum {
+        no,
+        always,
+        on_failure,
+        unless_stopped,
+    };
+
+    /// Parse a restart policy string like "always", "on-failure", "on-failure:5".
+    pub fn parse(input: []const u8) RestartPolicy {
+        if (std.mem.eql(u8, input, "no") or std.mem.eql(u8, input, "\"no\"")) {
+            return .{ .policy = .no };
+        } else if (std.mem.eql(u8, input, "always")) {
+            return .{ .policy = .always };
+        } else if (std.mem.eql(u8, input, "unless-stopped")) {
+            return .{ .policy = .unless_stopped };
+        } else if (std.mem.startsWith(u8, input, "on-failure")) {
+            if (std.mem.indexOf(u8, input, ":")) |colon_idx| {
+                const count_str = input[colon_idx + 1 ..];
+                const max_retries = std.fmt.parseInt(u32, count_str, 10) catch null;
+                return .{ .policy = .on_failure, .max_retries = max_retries };
+            }
+            return .{ .policy = .on_failure };
+        }
+        return .{ .policy = .no };
+    }
+};
+
+/// Logging configuration for a service.
+pub const Logging = struct {
+    driver: ?[]const u8 = null,
+    options: std.StringArrayHashMap([]const u8),
+
+    pub fn init(allocator: Allocator) Logging {
         return .{
-            .services = std.StringArrayHashMap(XFizzService).init(allocator),
+            .driver = null,
+            .options = std.StringArrayHashMap([]const u8).init(allocator),
         };
     }
 
-    pub fn deinit(self: *XFizz, allocator: Allocator) void {
-        for (self.services.values()) |*svc| {
-            svc.deinit(allocator);
-        }
-        for (self.services.keys()) |key| {
-            allocator.free(key);
-        }
-        self.services.deinit();
+    pub fn deinit(self: *Logging, allocator: Allocator) void {
+        if (self.driver) |d| allocator.free(d);
+        for (self.options.keys()) |key| allocator.free(key);
+        for (self.options.values()) |value| allocator.free(value);
+        self.options.deinit();
     }
 };
 
-/// Fizz-specific service configuration.
-pub const XFizzService = struct {
-    replicas: u32 = 1,
-    placement: ?Placement = null,
+/// Parse a byte size string like "512m", "1g", "100k" to bytes.
+pub fn parseByteSize(input: []const u8) !u64 {
+    if (input.len == 0) return error.InvalidByteSize;
 
-    pub fn deinit(self: *XFizzService, allocator: Allocator) void {
-        if (self.placement) |*p| {
-            p.deinit(allocator);
-        }
-    }
-};
+    const last_char = input[input.len - 1];
+    const multiplier: u64 = switch (last_char) {
+        'k', 'K' => 1024,
+        'm', 'M' => 1024 * 1024,
+        'g', 'G' => 1024 * 1024 * 1024,
+        't', 'T' => 1024 * 1024 * 1024 * 1024,
+        'b', 'B' => 1,
+        '0'...'9' => {
+            // No suffix, assume bytes
+            return std.fmt.parseInt(u64, input, 10) catch return error.InvalidByteSize;
+        },
+        else => return error.InvalidByteSize,
+    };
 
-/// Placement constraints for scheduling.
-pub const Placement = struct {
-    constraints: std.ArrayList([]const u8),
-
-    pub fn init(allocator: Allocator) Placement {
-        _ = allocator;
-        return .{
-            .constraints = .{},
-        };
-    }
-
-    pub fn deinit(self: *Placement, allocator: Allocator) void {
-        for (self.constraints.items) |c| {
-            allocator.free(c);
-        }
-        self.constraints.deinit(allocator);
-    }
-};
+    const num_str = input[0 .. input.len - 1];
+    const num = std.fmt.parseInt(u64, num_str, 10) catch return error.InvalidByteSize;
+    return num * multiplier;
+}
 
 /// Parse a duration string like "30s", "1m", "1h30m" to nanoseconds.
 pub fn parseDuration(input: []const u8) !u64 {
@@ -328,13 +461,6 @@ pub fn parseDuration(input: []const u8) !u64 {
         const num = std.fmt.parseInt(u64, num_str, 10) catch
             return error.InvalidDuration;
         total_ns += num * std.time.ns_per_s;
-    }
-
-    if (total_ns == 0 and input.len > 0) {
-        // Input was just a number, treat as seconds
-        const num = std.fmt.parseInt(u64, input, 10) catch
-            return error.InvalidDuration;
-        return num * std.time.ns_per_s;
     }
 
     return total_ns;

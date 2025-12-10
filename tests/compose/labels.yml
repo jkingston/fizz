@@ -1,0 +1,7 @@
+services:
+  web:
+    image: nginx
+    labels:
+      com.example.description: "Web server"
+      com.example.environment: production
+    container_name: my-web-container

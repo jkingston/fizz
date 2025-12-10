@@ -1,0 +1,7 @@
+services:
+  limited:
+    image: myapp
+    mem_limit: 512m
+    mem_reservation: 256m
+    cpus: 0.5
+    pids_limit: 100
