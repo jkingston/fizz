@@ -149,7 +149,8 @@ const Parser = struct {
 
             const name = self.allocator.dupe(u8, key_event.?.data.scalar.value) catch
                 return error.OutOfMemory;
-            errdefer self.allocator.free(name);
+            // Note: Service.init stores name, and Service.deinit frees it
+            // so we don't need errdefer here - service.deinit handles cleanup
 
             var service = Service.init(self.allocator, name);
             errdefer service.deinit(self.allocator);
@@ -331,9 +332,11 @@ const Parser = struct {
                 errdefer self.allocator.free(key);
 
                 const value = try self.parseInterpolatedScalar();
-                errdefer if (value) |v| self.allocator.free(v);
+                const heap_value = value orelse self.allocator.dupe(u8, "") catch
+                    return error.OutOfMemory;
+                errdefer self.allocator.free(heap_value);
 
-                service.environment.put(key, value orelse "") catch
+                service.environment.put(key, heap_value) catch
                     return error.OutOfMemory;
             }
         } else if (event.?.type == .sequence_start) {
@@ -520,6 +523,7 @@ const Parser = struct {
                 if (item.?.type == .scalar) {
                     const val = self.allocator.dupe(u8, item.?.data.scalar.value) catch
                         return error.OutOfMemory;
+                    errdefer self.allocator.free(val);
                     hc.test_cmd.append(self.allocator, val) catch return error.OutOfMemory;
                 }
             }
@@ -527,6 +531,7 @@ const Parser = struct {
             // String form: "CMD curl ..."
             const val = self.allocator.dupe(u8, event.?.data.scalar.value) catch
                 return error.OutOfMemory;
+            errdefer self.allocator.free(val);
             hc.test_cmd.append(self.allocator, val) catch return error.OutOfMemory;
         }
     }
@@ -548,6 +553,10 @@ const Parser = struct {
                     self.diagnostics.addError(item.?.start_mark, "invalid volume: {s}", .{item.?.data.scalar.value});
                     continue;
                 };
+                errdefer {
+                    self.allocator.free(vol.source);
+                    self.allocator.free(vol.target);
+                }
                 service.volumes.append(self.allocator, vol) catch return error.OutOfMemory;
             } else {
                 try self.skipValue();
@@ -574,6 +583,7 @@ const Parser = struct {
 
             const name = self.allocator.dupe(u8, key_event.?.data.scalar.value) catch
                 return error.OutOfMemory;
+            errdefer self.allocator.free(name);
 
             // Volume value can be null or a mapping - skip either way for now
             try self.skipValue();
@@ -602,6 +612,7 @@ const Parser = struct {
 
             const name = self.allocator.dupe(u8, key_event.?.data.scalar.value) catch
                 return error.OutOfMemory;
+            errdefer self.allocator.free(name);
 
             try self.skipValue();
 
@@ -797,9 +808,11 @@ const Parser = struct {
                 errdefer self.allocator.free(key);
 
                 const value = try self.parseInterpolatedScalar();
-                errdefer if (value) |v| self.allocator.free(v);
+                const heap_value = value orelse self.allocator.dupe(u8, "") catch
+                    return error.OutOfMemory;
+                errdefer self.allocator.free(heap_value);
 
-                service.labels.put(key, value orelse "") catch
+                service.labels.put(key, heap_value) catch
                     return error.OutOfMemory;
             }
         } else if (event.?.type == .sequence_start) {
@@ -826,7 +839,13 @@ const Parser = struct {
                         // Label without value
                         const key = self.allocator.dupe(u8, item_str) catch
                             return error.OutOfMemory;
-                        service.labels.put(key, "") catch
+                        errdefer self.allocator.free(key);
+
+                        const empty_value = self.allocator.dupe(u8, "") catch
+                            return error.OutOfMemory;
+                        errdefer self.allocator.free(empty_value);
+
+                        service.labels.put(key, empty_value) catch
                             return error.OutOfMemory;
                     }
                 }
@@ -893,9 +912,11 @@ const Parser = struct {
             errdefer self.allocator.free(key);
 
             const value = try self.parseInterpolatedScalar();
-            errdefer if (value) |v| self.allocator.free(v);
+            const heap_value = value orelse self.allocator.dupe(u8, "") catch
+                return error.OutOfMemory;
+            errdefer self.allocator.free(heap_value);
 
-            logging.options.put(key, value orelse "") catch
+            logging.options.put(key, heap_value) catch
                 return error.OutOfMemory;
         }
     }
