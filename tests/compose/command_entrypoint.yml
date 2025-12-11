@@ -1,0 +1,7 @@
+services:
+  app:
+    image: alpine
+    command: ["echo", "hello"]
+    entrypoint: ["/bin/sh", "-c"]
+    working_dir: /app
+    user: "1000:1000"

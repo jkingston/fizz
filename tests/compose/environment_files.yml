@@ -1,0 +1,8 @@
+services:
+  app:
+    image: myapp
+    env_file:
+      - .env
+      - ./config/app.env
+    environment:
+      OVERRIDE: value
