@@ -332,11 +332,9 @@ const Parser = struct {
                 errdefer self.allocator.free(key);
 
                 const value = try self.parseInterpolatedScalar();
-                const heap_value = value orelse self.allocator.dupe(u8, "") catch
-                    return error.OutOfMemory;
-                errdefer self.allocator.free(heap_value);
+                errdefer if (value) |v| self.allocator.free(v);
 
-                service.environment.put(key, heap_value) catch
+                service.environment.put(key, value orelse "") catch
                     return error.OutOfMemory;
             }
         } else if (event.?.type == .sequence_start) {
@@ -808,11 +806,9 @@ const Parser = struct {
                 errdefer self.allocator.free(key);
 
                 const value = try self.parseInterpolatedScalar();
-                const heap_value = value orelse self.allocator.dupe(u8, "") catch
-                    return error.OutOfMemory;
-                errdefer self.allocator.free(heap_value);
+                errdefer if (value) |v| self.allocator.free(v);
 
-                service.labels.put(key, heap_value) catch
+                service.labels.put(key, value orelse "") catch
                     return error.OutOfMemory;
             }
         } else if (event.?.type == .sequence_start) {
@@ -841,11 +837,7 @@ const Parser = struct {
                             return error.OutOfMemory;
                         errdefer self.allocator.free(key);
 
-                        const empty_value = self.allocator.dupe(u8, "") catch
-                            return error.OutOfMemory;
-                        errdefer self.allocator.free(empty_value);
-
-                        service.labels.put(key, empty_value) catch
+                        service.labels.put(key, "") catch
                             return error.OutOfMemory;
                     }
                 }
@@ -912,11 +904,9 @@ const Parser = struct {
             errdefer self.allocator.free(key);
 
             const value = try self.parseInterpolatedScalar();
-            const heap_value = value orelse self.allocator.dupe(u8, "") catch
-                return error.OutOfMemory;
-            errdefer self.allocator.free(heap_value);
+            errdefer if (value) |v| self.allocator.free(v);
 
-            logging.options.put(key, heap_value) catch
+            logging.options.put(key, value orelse "") catch
                 return error.OutOfMemory;
         }
     }
