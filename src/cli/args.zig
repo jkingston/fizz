@@ -1,5 +1,4 @@
 const std = @import("std");
-const clap = @import("clap");
 
 pub const ParseError = error{
     InvalidArguments,
@@ -77,8 +76,15 @@ fn parseValidate(args: *std.process.ArgIterator, allocator: std.mem.Allocator) P
     var file: []const u8 = "docker-compose.yml";
     var file_owned = false;
 
+    // Clean up allocated file path on early return (help or error)
+    errdefer if (file_owned) allocator.free(file);
+
     while (args.next()) |arg| {
         if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
+            // Clean up any allocated file before returning
+            if (file_owned) {
+                allocator.free(file);
+            }
             const stdout = std.fs.File.stdout();
             var buf: [4096]u8 = undefined;
             var writer = stdout.writer(&buf);
