@@ -1,0 +1,5 @@
+name: my-project
+
+services:
+  web:
+    image: nginx

@@ -1,0 +1,16 @@
+services:
+  always:
+    image: nginx
+    restart: always
+  on-failure:
+    image: nginx
+    restart: on-failure
+  on-failure-limited:
+    image: nginx
+    restart: "on-failure:5"
+  unless-stopped:
+    image: nginx
+    restart: unless-stopped
+  never:
+    image: nginx
+    restart: "no"

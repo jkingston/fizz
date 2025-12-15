@@ -1,0 +1,7 @@
+version: "3"
+name: my-app
+
+services:
+  web:
+    image: nginx
+    command: ["nginx", "-g", "daemon off;"]

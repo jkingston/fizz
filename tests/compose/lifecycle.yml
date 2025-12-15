@@ -1,0 +1,7 @@
+services:
+  app:
+    image: myapp
+    init: true
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
+    read_only: true
