@@ -388,6 +388,7 @@ const Parser = struct {
 
                 const svc_name = self.allocator.dupe(u8, item_event.?.data.scalar.value) catch
                     return error.OutOfMemory;
+                errdefer self.allocator.free(svc_name);
 
                 service.depends_on.append(self.allocator, .{
                     .service = svc_name,
@@ -1068,4 +1069,47 @@ test "unknown keys produce warnings" {
     try std.testing.expect(result.file != null);
     try std.testing.expect(!result.diagnostics.hasErrors());
     try std.testing.expect(result.diagnostics.count() > 0); // Has warnings
+}
+
+test "parse handles allocation failure gracefully" {
+    // Test that OOM during parsing doesn't cause double-free or leaks.
+    // Uses FailingAllocator to trigger OOM at various points.
+    const input =
+        \\services:
+        \\  web:
+        \\    image: nginx
+        \\    environment:
+        \\      KEY1: value1
+        \\      KEY2: value2
+        \\  api:
+        \\    image: node
+        \\    depends_on:
+        \\      - web
+    ;
+
+    // Try failing at different allocation points to exercise error paths
+    for (0..20) |fail_index| {
+        var failing_allocator = std.testing.FailingAllocator.init(
+            std.testing.allocator,
+            .{ .fail_index = fail_index },
+        );
+        const alloc = failing_allocator.allocator();
+
+        var env = interpolation.EnvMap.init(alloc);
+        defer env.deinit();
+
+        const result = parse(alloc, input, &env);
+
+        if (result) |*res| {
+            // Parse succeeded before we hit the fail point
+            var r = res.*;
+            r.deinit();
+        } else |err| {
+            // Parse failed - should be OOM or YamlError (which wraps OOM), not a crash
+            try std.testing.expect(err == error.OutOfMemory or err == error.YamlError);
+        }
+
+        // Verify no memory leaks: all allocations should be freed
+        try std.testing.expectEqual(failing_allocator.allocated_bytes, failing_allocator.freed_bytes);
+    }
 }
