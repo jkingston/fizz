@@ -1,4 +1,5 @@
 const std = @import("std");
+const clap = @import("clap");
 
 pub const ParseError = error{
     InvalidArguments,
@@ -15,15 +16,15 @@ pub const Command = union(enum) {
 };
 
 /// Arguments for the validate command.
-/// If `file_owned` is true, `file` was allocated and must be freed by the caller.
+/// If `needs_free` is true, `file` was allocated and must be freed by the caller.
 pub const ValidateArgs = struct {
     file: []const u8,
-    file_owned: bool = false,
     allocator: ?std.mem.Allocator = null,
+    needs_free: bool = false,
 
     /// Free owned resources.
     pub fn deinit(self: *ValidateArgs) void {
-        if (self.file_owned) {
+        if (self.needs_free) {
             if (self.allocator) |alloc| {
                 alloc.free(self.file);
             }
@@ -32,107 +33,109 @@ pub const ValidateArgs = struct {
     }
 };
 
+// Subcommand enum
+const SubCommand = enum {
+    help,
+    version,
+    validate,
+};
+
+// Main command parameters
+const main_params = clap.parseParamsComptime(
+    \\-h, --help     Show this help message and exit.
+    \\-v, --version  Show version information and exit.
+    \\<command>
+    \\
+);
+
+const main_parsers = .{
+    .command = clap.parsers.enumeration(SubCommand),
+};
+
+// Validate subcommand parameters
+const validate_params = clap.parseParamsComptime(
+    \\-h, --help         Show this help message.
+    \\-f, --file <str>   Compose file to validate.
+    \\<str>
+    \\
+);
+
 /// Parse command-line arguments and return the command to execute
 pub fn parse(allocator: std.mem.Allocator) ParseError!Command {
-    // Get command-line args, skipping program name
-    var args = std.process.argsWithAllocator(allocator) catch {
+    var iter = std.process.argsWithAllocator(allocator) catch {
         return ParseError.InvalidArguments;
     };
-    defer args.deinit();
+    defer iter.deinit();
 
     // Skip program name
-    _ = args.next();
+    _ = iter.next();
 
-    // Get first argument
-    const first_arg = args.next() orelse return .help;
+    var diag: clap.Diagnostic = .{};
+    var res = clap.parseEx(clap.Help, &main_params, main_parsers, &iter, .{
+        .diagnostic = &diag,
+        .allocator = allocator,
+        .terminating_positional = 0,
+    }) catch {
+        return ParseError.InvalidArguments;
+    };
+    defer res.deinit();
 
-    // Check for global flags
-    if (std.mem.eql(u8, first_arg, "-h") or std.mem.eql(u8, first_arg, "--help")) {
-        return .help;
-    }
-    if (std.mem.eql(u8, first_arg, "-v") or std.mem.eql(u8, first_arg, "--version")) {
-        return .version;
-    }
+    // Check global flags first
+    if (res.args.help != 0) return .help;
+    if (res.args.version != 0) return .version;
 
-    // Check for subcommands
-    if (std.mem.eql(u8, first_arg, "help")) {
-        return .help;
-    }
-    if (std.mem.eql(u8, first_arg, "version")) {
-        return .version;
-    }
-    if (std.mem.eql(u8, first_arg, "validate")) {
-        return parseValidate(&args, allocator);
-    }
+    // Get subcommand from positionals
+    const subcommand = res.positionals[0] orelse return .help;
 
-    // Unknown command
-    printErr("Unknown command: {s}\n\nRun 'fizz --help' for usage.\n", .{first_arg});
-    return ParseError.UnknownCommand;
+    return switch (subcommand) {
+        .help => .help,
+        .version => .version,
+        .validate => parseValidate(allocator, &iter),
+    };
 }
 
 /// Parse the validate subcommand arguments.
-/// Duplicates user-provided file paths to avoid use-after-free when ArgIterator is freed.
-fn parseValidate(args: *std.process.ArgIterator, allocator: std.mem.Allocator) ParseError!Command {
-    var file: []const u8 = "docker-compose.yml";
-    var file_owned = false;
+fn parseValidate(allocator: std.mem.Allocator, iter: anytype) ParseError!Command {
+    var diag: clap.Diagnostic = .{};
+    var res = clap.parseEx(clap.Help, &validate_params, clap.parsers.default, iter, .{
+        .diagnostic = &diag,
+        .allocator = allocator,
+    }) catch {
+        return ParseError.InvalidArguments;
+    };
+    defer res.deinit();
 
-    // Clean up allocated file path on early return (help or error)
-    errdefer if (file_owned) allocator.free(file);
-
-    while (args.next()) |arg| {
-        if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
-            // Clean up any allocated file before returning
-            if (file_owned) {
-                allocator.free(file);
-            }
-            const stdout = std.fs.File.stdout();
-            var buf: [4096]u8 = undefined;
-            var writer = stdout.writer(&buf);
-            printValidateHelp(&writer.interface) catch {};
-            writer.interface.flush() catch {};
-            return .done;
-        } else if (std.mem.eql(u8, arg, "-f") or std.mem.eql(u8, arg, "--file")) {
-            const arg_file = args.next() orelse {
-                printErr("error: --file requires an argument\n", .{});
-                return ParseError.InvalidArguments;
-            };
-            // Free previous allocation if user specified file multiple times
-            if (file_owned) {
-                allocator.free(file);
-            }
-            // Duplicate the file path to avoid use-after-free when ArgIterator is freed
-            file = allocator.dupe(u8, arg_file) catch return ParseError.InvalidArguments;
-            file_owned = true;
-        } else if (arg.len > 0 and arg[0] != '-') {
-            // Positional argument - the file
-            // Free previous allocation if user specified file multiple times
-            if (file_owned) {
-                allocator.free(file);
-            }
-            // Duplicate to avoid use-after-free when ArgIterator is freed
-            file = allocator.dupe(u8, arg) catch return ParseError.InvalidArguments;
-            file_owned = true;
-        } else {
-            printErr("Unknown option: {s}\n", .{arg});
-            return ParseError.InvalidArguments;
-        }
+    // Handle --help for validate subcommand
+    if (res.args.help != 0) {
+        const stdout = std.fs.File.stdout();
+        var buf: [4096]u8 = undefined;
+        var writer = stdout.writer(&buf);
+        printValidateHelp(&writer.interface) catch {};
+        writer.interface.flush() catch {};
+        return .done;
     }
 
-    return .{ .validate = .{
-        .file = file,
-        .file_owned = file_owned,
-        .allocator = allocator,
-    } };
-}
+    // Determine file: --file flag takes precedence, then positional, then default
+    const file_arg = res.args.file;
+    const positional_file: ?[]const u8 = res.positionals[0];
+    const file_source = file_arg orelse positional_file;
 
-/// Print an error message to stderr.
-/// Silently ignores write errors since there's no recovery path for stderr failures.
-fn printErr(comptime fmt: []const u8, args: anytype) void {
-    const stderr = std.fs.File.stderr();
-    var buf: [512]u8 = undefined;
-    var writer = stderr.writer(&buf);
-    writer.interface.print(fmt, args) catch {};
-    writer.interface.flush() catch {};
+    if (file_source) |src| {
+        // Duplicate string since clap result will be freed
+        const file = allocator.dupe(u8, src) catch return ParseError.InvalidArguments;
+        return .{ .validate = .{
+            .file = file,
+            .allocator = allocator,
+            .needs_free = true,
+        } };
+    } else {
+        // Use default - no allocation needed
+        return .{ .validate = .{
+            .file = "docker-compose.yml",
+            .allocator = allocator,
+            .needs_free = false,
+        } };
+    }
 }
 
 /// Print main help message
