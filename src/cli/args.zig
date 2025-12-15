@@ -15,9 +15,22 @@ pub const Command = union(enum) {
     done,
 };
 
-/// Arguments for the validate command
+/// Arguments for the validate command.
+/// If `file_owned` is true, `file` was allocated and must be freed by the caller.
 pub const ValidateArgs = struct {
     file: []const u8,
+    file_owned: bool = false,
+    allocator: ?std.mem.Allocator = null,
+
+    /// Free owned resources.
+    pub fn deinit(self: *ValidateArgs) void {
+        if (self.file_owned) {
+            if (self.allocator) |alloc| {
+                alloc.free(self.file);
+            }
+        }
+        self.* = undefined;
+    }
 };
 
 /// Parse command-line arguments and return the command to execute
@@ -50,7 +63,7 @@ pub fn parse(allocator: std.mem.Allocator) ParseError!Command {
         return .version;
     }
     if (std.mem.eql(u8, first_arg, "validate")) {
-        return parseValidate(&args);
+        return parseValidate(&args, allocator);
     }
 
     // Unknown command
@@ -58,34 +71,56 @@ pub fn parse(allocator: std.mem.Allocator) ParseError!Command {
     return ParseError.UnknownCommand;
 }
 
-fn parseValidate(args: *std.process.ArgIterator) ParseError!Command {
+/// Parse the validate subcommand arguments.
+/// Duplicates user-provided file paths to avoid use-after-free when ArgIterator is freed.
+fn parseValidate(args: *std.process.ArgIterator, allocator: std.mem.Allocator) ParseError!Command {
     var file: []const u8 = "docker-compose.yml";
+    var file_owned = false;
 
     while (args.next()) |arg| {
         if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
             const stdout = std.fs.File.stdout();
-            var buf: [2048]u8 = undefined;
+            var buf: [4096]u8 = undefined;
             var writer = stdout.writer(&buf);
             printValidateHelp(&writer.interface) catch {};
             writer.interface.flush() catch {};
             return .done;
         } else if (std.mem.eql(u8, arg, "-f") or std.mem.eql(u8, arg, "--file")) {
-            file = args.next() orelse {
+            const arg_file = args.next() orelse {
                 printErr("error: --file requires an argument\n", .{});
                 return ParseError.InvalidArguments;
             };
+            // Free previous allocation if user specified file multiple times
+            if (file_owned) {
+                allocator.free(file);
+            }
+            // Duplicate the file path to avoid use-after-free when ArgIterator is freed
+            file = allocator.dupe(u8, arg_file) catch return ParseError.InvalidArguments;
+            file_owned = true;
         } else if (arg.len > 0 and arg[0] != '-') {
             // Positional argument - the file
-            file = arg;
+            // Free previous allocation if user specified file multiple times
+            if (file_owned) {
+                allocator.free(file);
+            }
+            // Duplicate to avoid use-after-free when ArgIterator is freed
+            file = allocator.dupe(u8, arg) catch return ParseError.InvalidArguments;
+            file_owned = true;
         } else {
             printErr("Unknown option: {s}\n", .{arg});
             return ParseError.InvalidArguments;
         }
     }
 
-    return .{ .validate = .{ .file = file } };
+    return .{ .validate = .{
+        .file = file,
+        .file_owned = file_owned,
+        .allocator = allocator,
+    } };
 }
 
+/// Print an error message to stderr.
+/// Silently ignores write errors since there's no recovery path for stderr failures.
 fn printErr(comptime fmt: []const u8, args: anytype) void {
     const stderr = std.fs.File.stderr();
     var buf: [512]u8 = undefined;
@@ -138,11 +173,6 @@ pub fn printValidateHelp(writer: anytype) !void {
 }
 
 // --- Tests ---
-
-test "parse returns help by default" {
-    // Can't easily test process args parsing
-    // Tested via integration tests
-}
 
 test "printHelp formats correctly" {
     var buf: [1024]u8 = undefined;

@@ -10,6 +10,7 @@ const max_file_size_bytes = 10 * 1024 * 1024; // 10 MB
 
 pub const ValidateError = error{
     FileNotFound,
+    FileTooBig,
     ReadError,
     OutOfMemory,
 };
@@ -29,6 +30,10 @@ pub fn run(
             error.FileNotFound => {
                 writer.print("error: file not found: {s}\n", .{file_path}) catch {};
                 return ValidateError.FileNotFound;
+            },
+            error.FileTooBig => {
+                writer.print("error: file too large (max 10 MB): {s}\n", .{file_path}) catch {};
+                return ValidateError.FileTooBig;
             },
             error.OutOfMemory => return ValidateError.OutOfMemory,
             else => {

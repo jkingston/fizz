@@ -29,9 +29,12 @@ pub fn run(
             return 0;
         },
         .validate => |validate_args| {
-            return validate.run(allocator, validate_args, writer) catch |err| {
+            var mutable_args = validate_args;
+            defer mutable_args.deinit();
+            return validate.run(allocator, mutable_args, writer) catch |err| {
                 switch (err) {
                     validate.ValidateError.FileNotFound => return 1,
+                    validate.ValidateError.FileTooBig => return 1,
                     validate.ValidateError.ReadError => return 1,
                     validate.ValidateError.OutOfMemory => return error.OutOfMemory,
                 }
