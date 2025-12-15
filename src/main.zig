@@ -21,21 +21,21 @@ pub fn main() u8 {
     var writer = stdout.writer(&buf);
 
     // Parse arguments
-    const args = cli.Args.parse(allocator) catch {
+    const cmd = cli.Args.parse(allocator) catch {
         // Error already reported to stderr by parse()
         return 1;
     };
 
-    // Determine and run command
-    const cmd = cli.getCommand(args);
-    cli.run(cmd, build_options.version, &writer.interface) catch {
+    // Run command and get exit code
+    const exit_code = cli.run(allocator, cmd, build_options.version, &writer.interface) catch {
         return 1;
     };
+
     writer.interface.flush() catch {
         return 1;
     };
 
-    return 0;
+    return exit_code;
 }
 
 test "build options available" {
@@ -46,7 +46,6 @@ test "build options available" {
 test {
     // Import all test modules
     _ = @import("cli/root.zig");
-    _ = @import("cli/args.zig");
     _ = @import("log/root.zig");
     _ = @import("sim/clock.zig");
     _ = @import("compose/root.zig");
