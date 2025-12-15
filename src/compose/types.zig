@@ -100,6 +100,10 @@ pub const Service = struct {
     // Logging
     logging: ?Logging = null,
 
+    /// Initialize a new service with the given name.
+    ///
+    /// Ownership: The caller must pass a heap-allocated `name` slice.
+    /// The Service takes ownership and will free it in `deinit()`.
     pub fn init(allocator: Allocator, name: []const u8) Service {
         return .{
             .name = name,
@@ -287,8 +291,7 @@ pub const Healthcheck = struct {
     retries: u32 = 3,
     start_period_ns: u64 = 0,
 
-    pub fn init(allocator: Allocator) Healthcheck {
-        _ = allocator;
+    pub fn init() Healthcheck {
         return .{
             .test_cmd = .{},
         };

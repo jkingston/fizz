@@ -47,11 +47,14 @@ pub const Diagnostic = struct {
 pub const DiagnosticList = struct {
     items: std.ArrayList(Diagnostic),
     allocator: Allocator,
+    /// Count of diagnostics that were dropped due to allocation failure.
+    dropped_count: usize = 0,
 
     pub fn init(allocator: Allocator) DiagnosticList {
         return .{
             .items = .{},
             .allocator = allocator,
+            .dropped_count = 0,
         };
     }
 
@@ -101,6 +104,7 @@ pub const DiagnosticList = struct {
 
         self.items.append(self.allocator, diag) catch {
             self.allocator.free(message);
+            self.dropped_count += 1;
         };
     }
 

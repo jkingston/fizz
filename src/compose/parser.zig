@@ -456,7 +456,7 @@ const Parser = struct {
             return;
         }
 
-        var hc = Healthcheck.init(self.allocator);
+        var hc = Healthcheck.init();
         errdefer hc.deinit(self.allocator);
 
         while (true) {
