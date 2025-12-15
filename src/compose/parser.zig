@@ -358,6 +358,7 @@ const Parser = struct {
                     const raw_value = item[eq_idx + 1 ..];
                     const value = interpolation.interpolate(self.allocator, raw_value, self.env) catch
                         return error.OutOfMemory;
+                    errdefer self.allocator.free(value);
 
                     service.environment.put(key, value) catch
                         return error.OutOfMemory;
@@ -712,6 +713,7 @@ const Parser = struct {
                 if (item.?.type == .scalar) {
                     const val = self.allocator.dupe(u8, item.?.data.scalar.value) catch
                         return error.OutOfMemory;
+                    errdefer self.allocator.free(val);
                     list.append(self.allocator, val) catch return error.OutOfMemory;
                 }
             }
@@ -719,6 +721,7 @@ const Parser = struct {
             // Single string value - add as one item (don't split)
             const val = self.allocator.dupe(u8, event.?.data.scalar.value) catch
                 return error.OutOfMemory;
+            errdefer self.allocator.free(val);
             list.append(self.allocator, val) catch return error.OutOfMemory;
         }
     }
@@ -741,6 +744,7 @@ const Parser = struct {
             if (item.?.type == .scalar) {
                 const val = self.allocator.dupe(u8, item.?.data.scalar.value) catch
                     return error.OutOfMemory;
+                errdefer self.allocator.free(val);
                 list.append(self.allocator, val) catch return error.OutOfMemory;
             }
         }
@@ -761,6 +765,7 @@ const Parser = struct {
                 if (item.?.type == .scalar) {
                     const val = self.allocator.dupe(u8, item.?.data.scalar.value) catch
                         return error.OutOfMemory;
+                    errdefer self.allocator.free(val);
                     service.networks.append(self.allocator, val) catch return error.OutOfMemory;
                 }
             }
@@ -775,6 +780,7 @@ const Parser = struct {
                 if (key_event.?.type == .scalar) {
                     const network_name = self.allocator.dupe(u8, key_event.?.data.scalar.value) catch
                         return error.OutOfMemory;
+                    errdefer self.allocator.free(network_name);
                     service.networks.append(self.allocator, network_name) catch return error.OutOfMemory;
                 }
                 // Skip the network config value
@@ -1074,21 +1080,59 @@ test "unknown keys produce warnings" {
 test "parse handles allocation failure gracefully" {
     // Test that OOM during parsing doesn't cause double-free or leaks.
     // Uses FailingAllocator to trigger OOM at various points.
+    // This YAML exercises all major allocation paths in the parser.
     const input =
         \\services:
         \\  web:
-        \\    image: nginx
+        \\    image: nginx:alpine
+        \\    container_name: web-server
+        \\    hostname: web
+        \\    command: ["nginx", "-g", "daemon off;"]
+        \\    entrypoint: ["/entrypoint.sh"]
+        \\    working_dir: /app
+        \\    user: nginx
         \\    environment:
         \\      KEY1: value1
         \\      KEY2: value2
-        \\  api:
-        \\    image: node
+        \\    volumes:
+        \\      - data:/var/data
+        \\      - logs:/var/log
+        \\    labels:
+        \\      app: web
+        \\      tier: frontend
+        \\    expose:
+        \\      - "8080"
+        \\    dns:
+        \\      - 8.8.8.8
+        \\    networks:
+        \\      - frontend
+        \\    cap_add:
+        \\      - NET_ADMIN
+        \\    cap_drop:
+        \\      - ALL
+        \\    healthcheck:
+        \\      test: ["CMD", "curl", "-f", "http://localhost/"]
+        \\      interval: 30s
+        \\      timeout: 10s
         \\    depends_on:
-        \\      - web
+        \\      - api
+        \\    logging:
+        \\      driver: json-file
+        \\      options:
+        \\        max-size: 10m
+        \\  api:
+        \\    image: node:18
+        \\    environment:
+        \\      - NODE_ENV=production
+        \\volumes:
+        \\  data:
+        \\  logs:
+        \\networks:
+        \\  frontend:
     ;
 
     // Try failing at different allocation points to exercise error paths
-    for (0..20) |fail_index| {
+    for (0..80) |fail_index| {
         var failing_allocator = std.testing.FailingAllocator.init(
             std.testing.allocator,
             .{ .fail_index = fail_index },
