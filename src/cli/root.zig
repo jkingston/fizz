@@ -1,64 +1,99 @@
 const std = @import("std");
-const args = @import("args.zig");
+const args_mod = @import("args.zig");
+const validate = @import("validate.zig");
 
-pub const Args = args.Args;
+pub const Args = args_mod;
+pub const Command = args_mod.Command;
+pub const ValidateArgs = args_mod.ValidateArgs;
+pub const ParseError = args_mod.ParseError;
 
-/// Available CLI commands
-pub const Command = enum {
-    help,
-    version,
-};
-
-/// Determine which command to run based on parsed args
-pub fn getCommand(parsed: Args) Command {
-    if (parsed.show_version) return .version;
-    return .help;
-}
-
-/// Execute the CLI with parsed arguments
-pub fn run(cmd: Command, version: []const u8, writer: anytype) !void {
-    switch (cmd) {
-        .version => try printVersion(version, writer),
-        .help => try Args.printHelp(writer),
-    }
+/// Execute the CLI with parsed command.
+/// Returns the exit code (0 for success, non-zero for errors).
+pub fn run(
+    allocator: std.mem.Allocator,
+    cmd: Command,
+    version: []const u8,
+    writer: anytype,
+) !u8 {
+    return switch (cmd) {
+        .version => {
+            try printVersion(version, writer);
+            return 0;
+        },
+        .help => {
+            try args_mod.printHelp(writer);
+            return 0;
+        },
+        .done => {
+            // Help was already shown (e.g., subcommand help)
+            return 0;
+        },
+        .validate => |validate_args| {
+            var mutable_args = validate_args;
+            defer mutable_args.deinit();
+            return validate.run(allocator, mutable_args, writer) catch |err| {
+                switch (err) {
+                    validate.ValidateError.FileNotFound => return 1,
+                    validate.ValidateError.FileTooBig => return 1,
+                    validate.ValidateError.ReadError => return 1,
+                    validate.ValidateError.OutOfMemory => return error.OutOfMemory,
+                }
+            };
+        },
+    };
 }
 
 fn printVersion(version: []const u8, writer: anytype) !void {
     try writer.print("fizz {s}\n", .{version});
 }
 
-test "getCommand returns version when show_version is true" {
-    const parsed = Args{
-        .show_help = false,
-        .show_version = true,
-    };
-    try std.testing.expectEqual(Command.version, getCommand(parsed));
-}
+// --- Tests ---
 
-test "getCommand returns help by default" {
-    const parsed = Args{
-        .show_help = false,
-        .show_version = false,
-    };
-    try std.testing.expectEqual(Command.help, getCommand(parsed));
-}
-
-test "getCommand returns help when show_help is true" {
-    const parsed = Args{
-        .show_help = true,
-        .show_version = false,
-    };
-    try std.testing.expectEqual(Command.help, getCommand(parsed));
-}
-
-// Note: run function is integration-tested via CLI.
-// Unit testing with generic writers fails because clap.help requires *std.Io.Writer.
-
-test "printVersion formats correctly" {
+test "run version command" {
     var buf: [256]u8 = undefined;
     var fbs = std.io.fixedBufferStream(&buf);
-    try printVersion("0.1.0-dev", fbs.writer());
+    const exit_code = try run(std.testing.allocator, .version, "0.1.0-test", fbs.writer());
+
+    try std.testing.expectEqualStrings("fizz 0.1.0-test\n", fbs.getWritten());
+    try std.testing.expectEqual(@as(u8, 0), exit_code);
+}
+
+test "run help command" {
+    var buf: [2048]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    const exit_code = try run(std.testing.allocator, .help, "0.1.0", fbs.writer());
 
     const output = fbs.getWritten();
-    try std.testing.expectEqualStrings("fizz 0.1.0-dev\n", output);
+    try std.testing.expect(std.mem.indexOf(u8, output, "fizz - A lightweight") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "validate") != null);
+    try std.testing.expectEqual(@as(u8, 0), exit_code);
+}
+
+test "run validate with valid file" {
+    var buf: [4096]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+
+    const cmd = Command{ .validate = .{ .file = "examples/simple-compose.yml" } };
+    const exit_code = try run(std.testing.allocator, cmd, "0.1.0", fbs.writer());
+
+    const output = fbs.getWritten();
+    try std.testing.expect(std.mem.indexOf(u8, output, "valid") != null);
+    try std.testing.expectEqual(@as(u8, 0), exit_code);
+}
+
+test "run validate with nonexistent file" {
+    var buf: [4096]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+
+    const cmd = Command{ .validate = .{ .file = "nonexistent.yml" } };
+    const exit_code = try run(std.testing.allocator, cmd, "0.1.0", fbs.writer());
+
+    const output = fbs.getWritten();
+    try std.testing.expect(std.mem.indexOf(u8, output, "not found") != null);
+    try std.testing.expectEqual(@as(u8, 1), exit_code);
+}
+
+test {
+    _ = @import("args.zig");
+    _ = @import("validate.zig");
 }
